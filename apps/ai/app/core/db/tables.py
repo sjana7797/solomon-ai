@@ -4,7 +4,7 @@ Drizzle owns the schema and migrations; keep these in sync with
 packages/database/src/schema/chat.ts.
 """
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, MetaData, Table, Text, false
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, MetaData, Table, Text, false, true
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects.postgresql import BYTEA, ENUM, TSVECTOR, UUID
 
@@ -103,4 +103,42 @@ generated_images = Table(
     Column("dek_wrapped", Text, nullable=False),
     Column("dek_key_id", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+
+memory_profiles = Table(
+    "memory_profiles",
+    metadata,
+    Column("owner_id", UUID(as_uuid=True), primary_key=True),
+    Column("enabled", Boolean, nullable=False, server_default=true()),
+    Column("dek_wrapped", Text, nullable=False),
+    Column("dek_key_id", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+memories = Table(
+    "memories",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True),
+    Column(
+        "owner_id",
+        UUID(as_uuid=True),
+        ForeignKey("memory_profiles.owner_id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("content_enc", Text, nullable=False),
+    Column("category", Text, nullable=False),
+    Column("embedding", Vector(EMBEDDING_DIMENSIONS), nullable=False),
+    Column("source_chat_id", UUID(as_uuid=True)),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+chat_summaries = Table(
+    "chat_summaries",
+    metadata,
+    Column("chat_id", UUID(as_uuid=True), ForeignKey("chats.id", ondelete="CASCADE"), primary_key=True),
+    Column("summary_enc", Text, nullable=False),
+    Column("covered_messages", Integer, nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
 )

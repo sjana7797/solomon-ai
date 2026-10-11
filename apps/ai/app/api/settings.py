@@ -71,6 +71,37 @@ class Settings(BaseSettings):
     TTS_VOICE: str = "af_heart"
     TTS_IDLE_UNLOAD_SECONDS: int = 600
 
+    # Voice input: Moonshine base (English) via mlx-audio, ~0.1 s per clip warm.
+    STT_MODEL: str = "moonshine-ai/moonshine-base"
+    STT_IDLE_UNLOAD_SECONDS: int = 600
+    STT_MAX_SECONDS: int = 120
+
+    # Deep research: plan → research sub-questions (in rounds) → reflect → report
+    RESEARCH_MAX_ROUNDS: int = 3  # initial round + up to 2 follow-up rounds
+    RESEARCH_MAX_STEPS: int = 10  # sub-questions in total
+    RESEARCH_CONCURRENCY: int = 3  # sub-questions researched at once
+    RESEARCH_RESULTS_PER_QUERY: int = 5
+    RESEARCH_PASSAGES_PER_STEP: int = 6
+    # Fast model for note-taking and gap checks; the chat's model plans and writes.
+    RESEARCH_FAST_MODEL: str = "iris"
+
+    # Memory: long-term facts about the user + rolling summaries of long chats
+    MEMORY_MODEL: str = "iris"  # extracts facts and writes summaries
+    # Long-term memories added to the prompt: all of them up to this many,
+    # otherwise the most relevant MEMORY_RECALL_K.
+    MEMORY_RECALL_ALL_UNDER: int = 20
+    MEMORY_RECALL_K: int = 10
+    # Short-term: keep this many recent messages verbatim; older ones are
+    # folded into the chat summary, MEMORY_SUMMARY_BATCH messages at a time.
+    MEMORY_RECENT_MESSAGES: int = 12
+    MEMORY_SUMMARY_BATCH: int = 8
+
+    # Market data (NestJS apps/api finance module) for stock/index questions in chat
+    FINANCE_API_URL: str = "http://127.0.0.1:3003/api"
+    # Model that picks the tickers a message asks about. Small 1B models copy
+    # the prompt's examples, so this defaults to a capable fast model.
+    FINANCE_EXTRACT_MODEL: str = "iris"
+
     # Image search (SearXNG, docker-compose `searxng` service)
     SEARXNG_URL: str = "http://localhost:8080"
     IMAGE_SEARCH_MAX_RESULTS: int = 6

@@ -15,6 +15,9 @@ RAG as a LangGraph graph:
   back to Ollama web search; SearXNG images in parallel on the first pass.
 - retrieve: pgvector cache + attached documents → candidate passages.
 - rerank: Qwen3-Reranker via local Ollama; keeps retrieval order if missing.
+- market: questions about stocks, indices or currencies (same laya call)
+  also fetch live quotes from the NestJS finance API; they're shown as a quote
+  card and added to the answer's context alongside any web sources.
 - grade: `laya` judges whether the top passages answer the question; if not,
   rewrite the query and search once more.
 
@@ -26,7 +29,9 @@ outside the graph so reasoning/token streaming is untouched.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 from datetime import date
 from typing import Literal, TypedDict
 
@@ -48,6 +53,7 @@ from app.api.v1.documents.store import DocumentInfo
 from app.core.decisions import decide
 from app.core.image_search import image_search
 from app.core.llm import get_chat_model
+from app.core.market_data import MarketTerm, lookup_quotes, market_context
 from app.core.rerank import rerank
 from app.core.web_search import WebResult, web_search
 
@@ -58,6 +64,21 @@ Route = Literal["web", "docs", "none"]
 # laya routing thresholds (tuned on a small labelled set; see PR notes).
 _WEB_SURE = 0.5  # max(fresh, lookup) above this and above `general` → search
 _WEB_MAYBE = 0.3  # between MAYBE and SURE → ask the chat model
+# Market questions: laya's best market score above MAYBE (or a market keyword)
+# makes the turn a candidate; the term-extraction LLM call then has the final
+# say, returning no terms when no market data is wanted. No false positives
+# above 0.3 on the labelled set, but recall alone was ~70%.
+_MARKET_MAYBE = 0.12
+_MARKET_KEYWORDS = re.compile(
+    r"\b(stocks?|shares?|share price|market cap|nifty|sensex|nasdaq|dow jones|s&p|"
+    r"exchange rate|bitcoin|btc|ethereum|crypto|ticker|52.week|ipo)\b|\b[a-z]{3} to [a-z]{3}\b",
+    re.IGNORECASE,
+)
+_MARKET_QUESTIONS = {
+    "market": "Does this message ask about a specific stock, share price, market index, exchange rate, cryptocurrency or a listed company's market performance?",
+    "quote": "Is the user asking for a price or quote of a stock, index, currency or crypto?",
+    "mentions": "Does this message mention a company's stock or shares, a stock market index (like Nifty, Sensex, S&P 500, Nasdaq), a currency exchange rate, or a cryptocurrency price?",
+}
 # Retry only when laya is fairly sure the passages miss; a retry doubles the work.
 _GRADE_THRESHOLD = 0.25
 
@@ -75,6 +96,7 @@ class RagState(TypedDict, total=False):
     sufficient: bool
     sources: list[dict]
     system_prompt: str
+    market_context: str
 
 
 # ------------------------------------------------------------------ routing
@@ -93,8 +115,10 @@ async def _llm_needs_web(message: str, model: str) -> bool:
     return str(response.text).strip().lower().startswith("y")
 
 
-async def needs_web(message: str, model: str) -> bool:
-    """Auto-search decision: laya fast path, LLM only for borderline cases."""
+async def route_message(message: str, model: str) -> tuple[bool, bool]:
+    """(search the web?, fetch market data?). laya fast path; the LLM decides
+    borderline web cases; market candidates are confirmed by `_market_terms`."""
+    market = bool(_MARKET_KEYWORDS.search(message))
     try:
         answers = await decide(
             message[:1500],
@@ -111,32 +135,84 @@ async def needs_web(message: str, model: str) -> bool:
                     "type": "noul",
                     "instructions": "Can this be answered fully from general knowledge, reasoning, writing or coding skill, without looking anything up?",
                 },
+                **{
+                    key: {"type": "noul", "instructions": instructions}
+                    for key, instructions in _MARKET_QUESTIONS.items()
+                },
             },
         )
+        market = market or max(answers[k]["noul"] for k in _MARKET_QUESTIONS) > _MARKET_MAYBE
         signal = max(answers["fresh"]["noul"], answers["lookup"]["noul"])
         general = answers["general"]["noul"]
         if signal > _WEB_SURE and signal > general:
-            return True
+            return True, market
         if signal < _WEB_MAYBE:
-            return False
+            return False, market
     except Exception as exc:
         logger.warning("laya routing unavailable (%s); asking the LLM", exc)
     try:
-        return await _llm_needs_web(message, model)
+        return await _llm_needs_web(message, model), market
     except Exception as exc:
         logger.warning("LLM routing failed (%s); not searching", exc)
-        return False
+        return False, market
+
+
+async def _market_terms(messages: list[ChatMessage]) -> list[MarketTerm]:
+    """What the latest message asks market data for (follow-ups use history)."""
+    history = "\n".join(f"{m.role}: {m.content[:400]}" for m in messages[-4:])
+    response = await get_chat_model(settings.FINANCE_EXTRACT_MODEL, temperature=0).ainvoke(
+        [
+            SystemMessage(
+                "List the stocks, market indices, currencies or cryptocurrencies whose "
+                "market data (price, performance, valuation) the user's latest message asks "
+                "about: a JSON array of at most 3 objects with `ticker` (Yahoo Finance "
+                "ticker: the exchange suffix the user implies, .NS for India's NSE, ^ for "
+                "indices, XXXYYY=X for currency pairs, XXX-USD for crypto) and `name`. "
+                "Reply [] if the message isn't asking for market data (e.g. a general "
+                "finance concept or company history). Reply with only the JSON array."
+            ),
+            HumanMessage(history),
+        ]
+    )
+    text = str(response.text).strip()
+    start, end = text.find("["), text.rfind("]")
+    if start == -1 or end <= start:
+        return []
+    terms = json.loads(text[start : end + 1])
+    return [
+        MarketTerm(ticker=str(t.get("ticker") or ""), name=str(t.get("name") or ""))
+        for t in terms
+        if isinstance(t, dict)
+    ][:3]
+
+
+async def fetch_market(messages: list[ChatMessage]) -> list[dict]:
+    try:
+        return await lookup_quotes(await _market_terms(messages))
+    except Exception as exc:
+        logger.warning("Market lookup failed: %s", exc)
+        return []
 
 
 async def plan(state: RagState) -> RagState:
     write = get_stream_writer()
     latest = state["messages"][-1].content
-    use_web = state.get("force_web", False) or await needs_web(latest, state["model"])
-    if not use_web and not state.get("attached"):
-        return {"use_web": False}
-    write({"type": "status", "stage": "searching" if use_web else "reading"})
-    query = await build_search_query(state["messages"], state["model"])
-    return {"use_web": use_web, "query": query, "attempt": 0}
+    use_web, market = await route_message(latest, state["model"])
+    use_web = use_web or state.get("force_web", False)
+    market_task = (
+        asyncio.create_task(fetch_market(state["messages"])) if market else None
+    )
+    update: RagState = {"use_web": use_web}
+    if use_web or state.get("attached"):
+        write({"type": "status", "stage": "searching" if use_web else "reading"})
+        update |= {
+            "query": await build_search_query(state["messages"], state["model"]),
+            "attempt": 0,
+        }
+    if market_task is not None and (quotes := await market_task):
+        write({"type": "quotes", "quotes": quotes})
+        update["market_context"] = market_context(quotes)
+    return update
 
 
 def route_after_plan(state: RagState) -> Route:

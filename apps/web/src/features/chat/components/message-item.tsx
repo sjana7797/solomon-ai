@@ -13,9 +13,13 @@ import { StreamingResponse } from "@repo/ui/components/agents/streaming-response
 import { SparklesIcon } from "lucide-react";
 import { memo } from "react";
 
+import { QuoteCards } from "@/features/finance";
+import { MemoryNote } from "@/features/memory";
+
 import type { Message as ChatMessage } from "../types";
 import { GeneratedImage } from "./generated-image";
 import { ImageStrip } from "./image-strip";
+import { ResearchProgress } from "./research-progress";
 import { Markdown } from "./markdown";
 import { ReadAloudButton } from "./read-aloud-button";
 import { SourceStrip } from "./source-strip";
@@ -87,6 +91,14 @@ export const MessageItem = memo(function MessageItem({
               />
             </div>
           )}
+          {message.research && (
+            <ResearchProgress
+              progress={message.research}
+              active={streaming && !message.content}
+              sourceCount={message.sources?.length ?? 0}
+            />
+          )}
+          {message.quotes && message.quotes.length > 0 && <QuoteCards quotes={message.quotes} />}
           {message.sources && message.sources.length > 0 && (
             <SourceStrip sources={message.sources} />
           )}
@@ -107,7 +119,7 @@ export const MessageItem = memo(function MessageItem({
             />
           )}
           {message.generatedImage ? null : streaming && !message.content ? (
-            message.thinking || searching ? null : <ThinkingShimmer />
+            message.thinking || searching || message.research ? null : <ThinkingShimmer />
           ) : (
             <Markdown
               streaming={streaming}
@@ -116,6 +128,9 @@ export const MessageItem = memo(function MessageItem({
             >
               {message.content}
             </Markdown>
+          )}
+          {message.memoryChanges && message.memoryChanges.length > 0 && (
+            <MemoryNote changes={message.memoryChanges} />
           )}
           {failed && (
             <p className="mt-2 text-sm text-destructive">

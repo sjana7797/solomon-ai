@@ -13,7 +13,7 @@ import {
   AnimatedSidebarMenuItem,
 } from "@repo/ui/components/motion/animated-sidebar";
 import { Loader } from "@repo/ui/components/motion/loader";
-import { CompassIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { ChartLineIcon, CompassIcon, PlusIcon, SettingsIcon, Trash2Icon } from "lucide-react";
 import { useParams, usePathname, useRouter } from "next/navigation";
 
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -87,6 +87,15 @@ export function ChatSidebar() {
               Discover
             </AnimatedSidebarMenuButton>
           </AnimatedSidebarMenuItem>
+          <AnimatedSidebarMenuItem>
+            <AnimatedSidebarMenuButton
+              icon={<ChartLineIcon className="size-4" />}
+              isActive={pathname.startsWith("/finance")}
+              onSelect={() => router.push("/finance")}
+            >
+              Finance
+            </AnimatedSidebarMenuButton>
+          </AnimatedSidebarMenuItem>
         </AnimatedSidebarMenu>
       </AnimatedSidebarHeader>
 
@@ -135,6 +144,17 @@ export function ChatSidebar() {
       </AnimatedSidebarContent>
 
       <AnimatedSidebarFooter>
+        <AnimatedSidebarMenu>
+          <AnimatedSidebarMenuItem>
+            <AnimatedSidebarMenuButton
+              icon={<SettingsIcon className="size-4" />}
+              isActive={pathname === "/settings"}
+              onSelect={() => router.push("/settings")}
+            >
+              Settings
+            </AnimatedSidebarMenuButton>
+          </AnimatedSidebarMenuItem>
+        </AnimatedSidebarMenu>
         <div className="flex items-center justify-between px-1.5">
           <span className="text-xs text-muted-foreground">Stored on this device</span>
           <ThemeToggle />

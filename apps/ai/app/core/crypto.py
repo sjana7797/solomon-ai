@@ -82,6 +82,14 @@ def chunk_aad(chunk_id: UUID) -> str:
     return f"chunk:{chunk_id}"
 
 
+def memory_aad(memory_id: UUID) -> str:
+    return f"memory:{memory_id}"
+
+
+def summary_aad(chat_id: UUID) -> str:
+    return f"summary:{chat_id}"
+
+
 class ChatCipher:
     def __init__(self, keyring: dict[str, bytes], active_key_id: str) -> None:
         if active_key_id not in keyring:

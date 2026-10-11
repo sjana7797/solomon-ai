@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const ENVSchema = z.object({
-  PORT: z.coerce.number().default(3001),
+  PORT: z.coerce.number().default(3003),
   LOG_LEVEL: z
     .enum(["trace", "debug", "info", "warn", "error"])
     .default("info"),

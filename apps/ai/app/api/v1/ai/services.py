@@ -7,6 +7,7 @@ from typing import Literal
 from uuid import UUID
 
 from app.api.settings import settings
+from app.api.v1.ai.deep_research import research_graph
 from app.api.v1.ai.intent import wants_image
 from app.api.v1.ai.rag_graph import rag_graph
 from app.api.v1.ai.schemas import AIPromptRequest
@@ -14,16 +15,42 @@ from app.api.v1.ai.title import TITLE_TIMEOUT_SECONDS, generate_title
 from app.api.v1.chat.repository import AssistantTurn, UserTurn, save_exchange
 from app.api.v1.documents.store import list_uploads
 from app.api.v1.images.store import save_image
+from app.api.v1.memory.long_term import learn, memory_prompt, recall
+from app.api.v1.memory.short_term import compact_history
+from app.api.v1.memory.store import MemoryChange, is_enabled
 from app.core.image_gen import GeneratedImage, ImageProgress, generate_image
 from app.core.background import spawn_background
 from app.core.crypto import get_chat_cipher
 from app.core.llm import stream_chat_completion
+from app.core.model_catalog import supports_reasoning
 
 logger = logging.getLogger(__name__)
 
 
 def _sse(event: dict) -> str:
     return f"data: {json.dumps(event)}\n\n"
+
+
+# How long a finished reply waits for memory learning before reporting it.
+_LEARN_WAIT_SECONDS = 3
+_RECALL_WAIT_SECONDS = 2
+
+
+async def _safe(coro, fallback):
+    """Run a memory step; failures are logged, never break the reply."""
+    try:
+        return await coro
+    except Exception as exc:
+        logger.warning("Memory step failed: %s", exc)
+        return fallback
+
+
+async def _memory_enabled(owner_id: UUID) -> bool:
+    try:
+        return await is_enabled(owner_id)
+    except Exception as exc:
+        logger.warning("Memory unavailable: %s", exc)
+        return False
 
 
 async def _resolve_title(task: asyncio.Task[str | None] | None, fallback: str) -> str:
@@ -71,7 +98,6 @@ async def get_ai_response(ai_prompt_request: AIPromptRequest, owner_id: UUID):
     received_at = datetime.now(UTC)
     started = time.monotonic()
     thinking = ai_prompt_request.thinking
-    messages = [m.model_dump() for m in ai_prompt_request.messages]
     query = ai_prompt_request.messages[-1].content
     # First turn of a chat (decided from the conversation, not the DB, so it
     # doesn't race with the previous turn's background save).
@@ -106,6 +132,7 @@ async def get_ai_response(ai_prompt_request: AIPromptRequest, owner_id: UUID):
         latest = ai_prompt_request.messages[-1].content
         make_image = ai_prompt_request.image or (
             not ai_prompt_request.web_search
+            and not ai_prompt_request.research
             and not ai_prompt_request.document_ids
             and await wants_image(latest)
         )
@@ -149,16 +176,27 @@ async def get_ai_response(ai_prompt_request: AIPromptRequest, owner_id: UUID):
             yield _sse({"type": "done"})
             return
 
+        # Memory: recall what we know about the user and learn from this
+        # message, both alongside retrieval; long chats send a summary.
+        recall_task = learn_task = None
+        if await _memory_enabled(owner_id):
+            recall_task = asyncio.create_task(_safe(recall(owner_id, latest), []))
+            learn_task = asyncio.create_task(
+                _safe(learn(owner_id, ai_prompt_request.messages, ai_prompt_request.chat_id), [])
+            )
+        messages = await compact_history(ai_prompt_request.chat_id, ai_prompt_request.messages)
+
         attached = (
             [d for d in await list_uploads(owner_id, ai_prompt_request.document_ids) if d.status == "ready"]
             if ai_prompt_request.document_ids
             else []
         )
-        # RAG graph (route → search → retrieve → rerank → grade); its progress
-        # events go straight to the browser.
+        # RAG graph (route → search → retrieve → rerank → grade), or the deep
+        # research graph; their progress events go straight to the browser.
+        graph = research_graph if ai_prompt_request.research else rag_graph
         try:
             final: dict = {}
-            async for mode, chunk in rag_graph.astream(
+            async for mode, chunk in graph.astream(
                 {
                     "messages": ai_prompt_request.messages,
                     "model": ai_prompt_request.model,
@@ -174,19 +212,39 @@ async def get_ai_response(ai_prompt_request: AIPromptRequest, owner_id: UUID):
                 else:
                     final = chunk
             sources = final.get("sources", [])
-            used_web = bool(final.get("use_web"))
-            if final.get("system_prompt"):
-                messages = [{"role": "system", "content": final["system_prompt"]}, *messages]
+            used_web = ai_prompt_request.research or bool(final.get("use_web"))
         except Exception as exc:
             # Answer without sources rather than failing the whole reply.
             logger.warning("Retrieval failed: %s", exc)
+            final = {}
             if ai_prompt_request.web_search or attached:
                 yield _sse({"type": "sources", "sources": []})
+
+        remembered = []
+        if recall_task is not None:
+            try:
+                remembered = await asyncio.wait_for(recall_task, _RECALL_WAIT_SECONDS)
+            except TimeoutError:
+                logger.warning("Memory recall timed out")
+        system_prompt = "\n\n".join(
+            p
+            for p in (
+                memory_prompt(remembered) if remembered else None,
+                final.get("market_context"),
+                final.get("system_prompt"),
+            )
+            if p
+        )
+        if system_prompt:
+            messages = [{"role": "system", "content": system_prompt}, *messages]
 
         async for part in stream_chat_completion(
             ai_prompt_request.model,
             messages,
-            reasoning_effort="high" if thinking else "low",
+            # Only reasoning models get an effort level; others reject it.
+            reasoning_effort=("high" if thinking else "low")
+            if await supports_reasoning(ai_prompt_request.model)
+            else None,
             temperature=ai_prompt_request.temperature,
             max_tokens=ai_prompt_request.max_tokens,
         ):
@@ -209,6 +267,21 @@ async def get_ai_response(ai_prompt_request: AIPromptRequest, owner_id: UUID):
             await _resolve_title(title_task, "")
             if event := title_event():
                 yield event
+        if learn_task is not None:
+            try:
+                # Shielded: if it's slow it keeps running and saves in the background.
+                changes: list[MemoryChange] = await asyncio.wait_for(
+                    asyncio.shield(learn_task), _LEARN_WAIT_SECONDS
+                )
+                if changes:
+                    yield _sse(
+                        {
+                            "type": "memory",
+                            "changes": [{"op": c.op, "content": c.content} for c in changes],
+                        }
+                    )
+            except TimeoutError:
+                pass
         status = "done"
         yield _sse({"type": "done"})
     except (asyncio.CancelledError, GeneratorExit):

@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from "react";
 
+import { getVoicePreferences } from "@/features/settings/lib/voice-preferences";
+
 import { fetchSpeech } from "../api/ai-client";
 
 /*
@@ -64,8 +66,10 @@ export async function startReadAloud(messageId: string, markdown: string) {
   session = mine;
   setStatus(messageId, "loading");
 
+  // Voice + speed from Settings, fixed for the whole reading.
+  const { voice, speed } = getVoicePreferences();
   const load = (i: number) =>
-    fetchSpeech(chunks[i]!, abort.signal).then((blob) => {
+    fetchSpeech(chunks[i]!, { voice, speed }, abort.signal).then((blob) => {
       const url = URL.createObjectURL(blob);
       mine.urls.push(url);
       return url;

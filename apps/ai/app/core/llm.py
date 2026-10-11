@@ -4,7 +4,7 @@ from functools import lru_cache
 from typing import Literal
 
 from langchain_openai import ChatOpenAI
-from openai import AsyncOpenAI, OpenAI
+from openai import AsyncOpenAI, BadRequestError, OpenAI
 
 from app.api.settings import settings
 
@@ -50,7 +50,7 @@ async def stream_chat_completion(
     model: str,
     messages: list[dict[str, str]],
     *,
-    reasoning_effort: ReasoningEffort,
+    reasoning_effort: ReasoningEffort | None,
     temperature: float | None = None,
     max_tokens: int | None = None,
 ) -> AsyncIterator[StreamPart]:
@@ -58,17 +58,26 @@ async def stream_chat_completion(
 
     Uses the OpenAI SDK directly because LangChain's ChatOpenAI drops the
     `reasoning_content` deltas LiteLLM sends for reasoning models.
-    LiteLLM drops `reasoning_effort` for models that don't support it.
+    `reasoning_effort=None` sends no thinking option at all: some Ollama models
+    (e.g. llama3.2) reject it outright rather than ignoring it.
     """
-    stream = await _async_client().chat.completions.create(
-        model=model,
-        messages=messages,  # type: ignore[arg-type]
-        stream=True,
-        stream_options={"include_usage": True},
-        reasoning_effort=reasoning_effort,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
+    request = {
+        "model": model,
+        "messages": messages,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    try:
+        stream = await _async_client().chat.completions.create(
+            **request, **({"reasoning_effort": reasoning_effort} if reasoning_effort else {})
+        )
+    except BadRequestError as exc:
+        if not reasoning_effort or "thinking" not in str(exc).lower():
+            raise
+        # Model refused the thinking option: answer without it.
+        stream = await _async_client().chat.completions.create(**request)
     async with stream:
         async for chunk in stream:
             if chunk.usage:

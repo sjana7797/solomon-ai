@@ -1,3 +1,6 @@
+import type { QuoteSnapshot } from "@/features/finance";
+import type { MemoryChange } from "@/features/memory";
+
 export type Role = "user" | "assistant";
 
 export type MessageStatus = "streaming" | "done" | "error" | "stopped";
@@ -39,6 +42,12 @@ export interface Message {
   searchStage?: SearchStage;
   sources?: Source[];
   images?: ImageResult[];
+  /** Live market quotes for securities the message asked about. */
+  quotes?: QuoteSnapshot[];
+  /** Long-term memory changes learned from the user's message. */
+  memoryChanges?: MemoryChange[];
+  /** Deep research progress (plan, sub-questions, stage). */
+  research?: ResearchProgress;
   /** Image this reply generated (local image model). */
   generatedImage?: GeneratedImageState;
   status: MessageStatus;
@@ -78,8 +87,26 @@ export interface GeneratedImageState {
   progress?: number;
 }
 
+export interface ResearchStep {
+  id: string;
+  question: string;
+  status: "pending" | "searching" | "reading" | "done" | "failed";
+  /** Distinct sources used for this sub-question. */
+  sources: number;
+}
+
+export interface ResearchProgress {
+  stage: "planning" | "researching" | "reflecting" | "writing";
+  round: number;
+  steps: ResearchStep[];
+}
+
 export type SearchStage = "searching" | "reading";
 
 export interface ModelInfo {
   id: string;
+  /** What the model is good for (LiteLLM model info, or a built-in default). */
+  description?: string;
+  /** Whether the Think toggle (reasoning effort) has an effect. */
+  reasoning?: boolean;
 }

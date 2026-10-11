@@ -8,45 +8,49 @@ import {
   SelectTrigger,
 } from "@repo/ui/components/motion/select";
 import { cn } from "@repo/ui/lib/utils";
-import { BrainIcon, CpuIcon, GlobeIcon, ImageIcon, PaperclipIcon } from "lucide-react";
+import {
+  BrainIcon,
+  CpuIcon,
+  GlobeIcon,
+  ImageIcon,
+  PaperclipIcon,
+  TelescopeIcon,
+  XIcon,
+} from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 
 import type { Attachment } from "../hooks/use-attachments";
 import { useModels } from "../hooks/use-models";
+import { useVoiceInput } from "../hooks/use-voice-input";
 import { AttachmentChips } from "./attachment-chips";
+import { VoiceInputButton } from "./voice-input-button";
 
 const ACCEPT = ".pdf,.docx,.txt,.md,.markdown,.csv";
 
-function ModeToggle({
-  pressed,
-  onPressedChange,
-  disabled,
+/** Active tool, shown next to "+"; click to turn it off (ChatGPT-style). */
+function ToolChip({
   icon,
-  title,
-  children,
+  label,
+  onRemove,
+  disabled,
 }: {
-  pressed: boolean;
-  onPressedChange: (pressed: boolean) => void;
-  disabled?: boolean;
   icon: ReactNode;
-  title: string;
-  children: ReactNode;
+  label: string;
+  onRemove: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
-      aria-pressed={pressed}
-      title={title}
+      onClick={onRemove}
       disabled={disabled}
-      onClick={() => onPressedChange(!pressed)}
-      className={cn(
-        "inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-muted-foreground transition-[color,background-color,box-shadow] duration-200 ease-out hover:text-foreground disabled:opacity-50 [&_svg]:size-3.5",
-        pressed &&
-          "bg-card text-foreground shadow-[0_1px_2px_oklch(0_0_0/0.08),0_2px_8px_-4px_oklch(0.45_0.12_292/0.4)] [&_svg]:text-primary-foreground dark:[&_svg]:text-primary",
-      )}
+      aria-label={`Turn off ${label}`}
+      title={`Turn off ${label}`}
+      className="group inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-primary/20 pr-2 pl-2.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-primary/35 disabled:opacity-50 [&_svg]:size-3.5"
     >
       {icon}
-      {children}
+      {label}
+      <XIcon className="opacity-60 transition-opacity group-hover:opacity-100" />
     </button>
   );
 }
@@ -71,12 +75,30 @@ function ModelSelect({
           <span className="truncate">{value ?? "Choose model"}</span>
         </span>
       </SelectTrigger>
-      <SelectContent className="right-0 left-auto w-52 shadow-none">
+      <SelectContent className="right-0 left-auto w-72 shadow-none">
         {models.map((model) => (
           <SelectItem key={model.id} value={model.id} className="py-2">
-            <span className="flex min-w-0 items-center gap-2">
-              <CpuIcon className="size-4 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 truncate text-sm text-foreground">{model.id}</span>
+            <span className="flex min-w-0 items-start gap-2.5">
+              <CpuIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5">
+                  <span className="truncate text-sm font-medium text-foreground">{model.id}</span>
+                  {model.reasoning && (
+                    <span
+                      title="Supports Think mode"
+                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/20 px-1.5 py-px text-[10px] font-medium text-accent-foreground"
+                    >
+                      <BrainIcon className="size-2.5" />
+                      Think
+                    </span>
+                  )}
+                </span>
+                {model.description && (
+                  <span className="mt-0.5 line-clamp-2 text-xs leading-4 text-muted-foreground">
+                    {model.description}
+                  </span>
+                )}
+              </span>
             </span>
           </SelectItem>
         ))}
@@ -97,6 +119,8 @@ export function ChatComposer({
   onWebSearchChange,
   imageMode,
   onImageModeChange,
+  researchMode,
+  onResearchModeChange,
   attachments,
   onAttachFiles,
   onRemoveAttachment,
@@ -115,6 +139,9 @@ export function ChatComposer({
   /** Generate an image from the next message (one-shot). */
   imageMode: boolean;
   onImageModeChange: (imageMode: boolean) => void;
+  /** Deep research for the next message (one-shot). */
+  researchMode: boolean;
+  onResearchModeChange: (researchMode: boolean) => void;
   attachments: Attachment[];
   onAttachFiles: (files: File[]) => void;
   onRemoveAttachment: (attachment: Attachment) => void;
@@ -123,9 +150,15 @@ export function ChatComposer({
   autoFocus?: boolean;
 }) {
   const [value, setValue] = useState("");
+  // Spoken text is appended to whatever is already typed, ready to edit.
+  const voice = useVoiceInput((text) =>
+    setValue((current) => (current.trim() ? `${current.trimEnd()} ${text}` : text)),
+  );
   const [waitNote, setWaitNote] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
-  const { isError } = useModels();
+  const { data: models, isError } = useModels();
+  // Think only applies to reasoning models (unknown → allow).
+  const canThink = models?.find((m) => m.id === model)?.reasoning ?? true;
 
   return (
     <div>
@@ -146,13 +179,49 @@ export function ChatComposer({
         actions={[
           {
             value: "upload",
-            label: "Upload files",
-            description: "PDF, DOCX, TXT, Markdown or CSV — answers cite them",
+            label: "Add files",
+            description: "PDF, DOCX, TXT, Markdown or CSV; answers cite them",
             icon: <PaperclipIcon />,
+          },
+          {
+            value: "search",
+            label: "Search the web",
+            description: "Answer from live web results with sources",
+            icon: <GlobeIcon />,
+            selected: webSearch,
+            groupLabel: "Tools",
+          },
+          {
+            value: "think",
+            label: "Think longer",
+            description: canThink
+              ? "The model reasons before answering"
+              : "Not supported by this model; pick one with the Think badge",
+            icon: <BrainIcon />,
+            selected: thinking && canThink,
+            disabled: !canThink,
+          },
+          {
+            value: "research",
+            label: "Deep research",
+            description: "Searches in rounds and writes a cited report (a few minutes)",
+            icon: <TelescopeIcon />,
+            selected: researchMode,
+          },
+          {
+            value: "image",
+            label: "Create image",
+            description: "Generate an image on this Mac",
+            icon: <ImageIcon />,
+            selected: imageMode,
           },
         ]}
         onAction={(action) => {
           if (action === "upload") fileInput.current?.click();
+          else if (action === "search") onWebSearchChange(!webSearch);
+          else if (action === "think") onThinkingChange(!thinking);
+          else if (action === "research") onResearchModeChange(!researchMode);
+          else if (action === "image") onImageModeChange(!imageMode);
         }}
         value={value}
         onValueChange={setValue}
@@ -160,49 +229,66 @@ export function ChatComposer({
         onStop={onStop}
         disabled={!model}
         autoFocus={autoFocus}
-        minRows={2}
+        minRows={1}
         placeholder={
           imageMode
             ? "Describe the image you want…"
-            : webSearch
+            : researchMode
+              ? "What should Solomon research in depth?"
+              : webSearch
               ? "Search the web and ask anything…"
               : "Ask anything…"
         }
         aria-label="Message"
-        className="rounded-[1.75rem] border-border/70 bg-card px-3 pt-3 pb-2.5 shadow-[0_1px_2px_oklch(0_0_0/0.04),0_16px_40px_-20px_oklch(0.45_0.12_292/0.45)] transition-[border-color,box-shadow] focus-within:border-primary/70"
+        className="rounded-[1.75rem] border-border/70 bg-card px-2.5 pt-3 pb-2 shadow-[0_1px_2px_oklch(0_0_0/0.04),0_16px_40px_-20px_oklch(0.45_0.12_292/0.45)] transition-[border-color,box-shadow] focus-within:border-primary/70"
         leadingAction={
-          <div className="flex items-center gap-0.5 rounded-full bg-muted p-0.5">
-            <ModeToggle
-              pressed={webSearch}
-              onPressedChange={onWebSearchChange}
-              disabled={streaming}
-              icon={<GlobeIcon />}
-              title="Search the web and answer with cited sources"
-            >
-              Search
-            </ModeToggle>
-            <ModeToggle
-              pressed={thinking}
-              onPressedChange={onThinkingChange}
-              disabled={streaming}
-              icon={<BrainIcon />}
-              title="Deep thinking: the model reasons longer before answering"
-            >
-              Think
-            </ModeToggle>
-            <ModeToggle
-              pressed={imageMode}
-              onPressedChange={onImageModeChange}
-              disabled={streaming}
-              icon={<ImageIcon />}
-              title="Generate an image from your message (runs locally)"
-            >
-              Image
-            </ModeToggle>
+          <div className="flex min-w-0 items-center gap-1 overflow-x-auto scrollbar-hide">
+            {researchMode && (
+              <ToolChip
+                icon={<TelescopeIcon />}
+                label="Research"
+                onRemove={() => onResearchModeChange(false)}
+                disabled={streaming}
+              />
+            )}
+            {imageMode && (
+              <ToolChip
+                icon={<ImageIcon />}
+                label="Image"
+                onRemove={() => onImageModeChange(false)}
+                disabled={streaming}
+              />
+            )}
+            {webSearch && !researchMode && !imageMode && (
+              <ToolChip
+                icon={<GlobeIcon />}
+                label="Search"
+                onRemove={() => onWebSearchChange(false)}
+                disabled={streaming}
+              />
+            )}
+            {thinking && canThink && !imageMode && (
+              <ToolChip
+                icon={<BrainIcon />}
+                label="Think"
+                onRemove={() => onThinkingChange(false)}
+                disabled={streaming}
+              />
+            )}
           </div>
         }
         trailingAction={
-          <ModelSelect value={model} onChange={onModelChange} disabled={streaming} />
+          <>
+            <VoiceInputButton
+              status={voice.status}
+              seconds={voice.seconds}
+              disabled={streaming}
+              onStart={() => void voice.start()}
+              onStop={voice.stop}
+              onCancel={voice.cancel}
+            />
+            <ModelSelect value={model} onChange={onModelChange} disabled={streaming} />
+          </>
         }
         submitClassName="size-9 rounded-xl bg-primary text-primary-foreground hover:bg-primary/85 disabled:bg-muted disabled:text-muted-foreground"
         onSubmit={(text) => {
@@ -222,6 +308,7 @@ export function ChatComposer({
           Your files are still being indexed — send again in a moment.
         </p>
       )}
+      {voice.error && <p className="mt-2 px-1 text-xs text-destructive">{voice.error}</p>}
       {isError && (
         <p className="mt-2 px-1 text-xs text-destructive">
           Couldn&apos;t load models — is the AI service running?

@@ -1,9 +1,12 @@
+import type { QuoteSnapshot } from "@/features/finance";
+import type { MemoryChange } from "@/features/memory";
 import { AI_API_URL } from "@/lib/env";
 
 import { getClientId } from "../lib/client-id";
 import type {
   ImageResult,
   ModelInfo,
+  ResearchProgress,
   Role,
   SearchStage,
   Source,
@@ -25,6 +28,8 @@ export type CompletionRequest = {
   web_search: boolean;
   /** Uploaded documents to answer from. */
   document_ids: string[];
+  /** Deep research: multi-round search and a long cited report. */
+  research: boolean;
   /** Force image generation (otherwise the server detects image requests). */
   image: boolean;
   messages: { role: Role; content: string }[];
@@ -38,6 +43,11 @@ export type CompletionEvent =
   | { type: "status"; stage: SearchStage; query?: string; count?: number }
   | { type: "sources"; sources: Source[] }
   | { type: "images"; images: ImageResult[] }
+  | { type: "quotes"; quotes: QuoteSnapshot[] }
+  /** Long-term memories this message added, updated or removed. */
+  | { type: "memory"; changes: MemoryChange[] }
+  /** Deep research progress snapshot (replaces the previous one). */
+  | ({ type: "research" } & ResearchProgress)
   | {
       type: "image";
       status: "generating" | "complete";
@@ -50,6 +60,8 @@ export type CompletionEvent =
   /** AI-generated title, sent once for a new chat. */
   | { type: "title"; title: string }
   | { type: "done" }
+  /** The user stopped the reply (it keeps what was generated). */
+  | { type: "stopped" }
   | { type: "error"; message: string };
 
 export async function fetchModels(signal?: AbortSignal): Promise<ModelInfo[]> {
@@ -59,19 +71,11 @@ export async function fetchModels(signal?: AbortSignal): Promise<ModelInfo[]> {
   return data.models;
 }
 
-export async function* streamCompletion(
-  body: CompletionRequest,
-  signal?: AbortSignal,
-): AsyncGenerator<CompletionEvent> {
-  const res = await fetch(`${AI_API_URL}/api/v1/chat/completion`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Client-Id": getClientId(),
-    },
-    body: JSON.stringify(body),
-    signal,
-  });
+/** Thrown when a reply can no longer be resumed (expired or never started). */
+export class ReplyGoneError extends Error {}
+
+async function* readEvents(res: Response): AsyncGenerator<CompletionEvent> {
+  if (res.status === 404) throw new ReplyGoneError("This reply is no longer available.");
   if (!res.ok || !res.body) {
     throw new Error(`AI service responded with ${res.status}`);
   }
@@ -87,6 +91,7 @@ export async function* streamCompletion(
     while ((boundary = buffer.indexOf("\n\n")) !== -1) {
       const frame = buffer.slice(0, boundary);
       buffer = buffer.slice(boundary + 2);
+      // Comment frames (": keep-alive") have no data lines and are skipped.
       const data = frame
         .split("\n")
         .filter((line) => line.startsWith("data:"))
@@ -95,6 +100,43 @@ export async function* streamCompletion(
       if (data) yield JSON.parse(data) as CompletionEvent;
     }
   }
+}
+
+/** Start a reply. It's generated server-side, so a dropped stream can be resumed. */
+export async function* streamCompletion(
+  body: CompletionRequest,
+  signal?: AbortSignal,
+): AsyncGenerator<CompletionEvent> {
+  const res = await fetch(`${AI_API_URL}/api/v1/chat/completion`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Client-Id": getClientId(),
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+  yield* readEvents(res);
+}
+
+/** Replay a reply's events from the start and follow it live. */
+export async function* resumeCompletion(
+  replyId: string,
+  signal?: AbortSignal,
+): AsyncGenerator<CompletionEvent> {
+  const res = await fetch(`${AI_API_URL}/api/v1/chat/completion/${replyId}/stream`, {
+    headers: { "X-Client-Id": getClientId() },
+    signal,
+  });
+  yield* readEvents(res);
+}
+
+/** Ask the server to stop generating a reply (it saves what it has). */
+export async function stopReply(replyId: string) {
+  await fetch(`${AI_API_URL}/api/v1/chat/completion/${replyId}/stop`, {
+    method: "POST",
+    headers: { "X-Client-Id": getClientId() },
+  });
 }
 
 async function errorDetail(res: Response, fallback: string) {
@@ -143,13 +185,29 @@ export async function fetchGeneratedImage(id: string, signal?: AbortSignal): Pro
 }
 
 /** Spoken audio (WAV) for a chunk of answer text, from the local TTS model. */
-export async function fetchSpeech(text: string, signal?: AbortSignal): Promise<Blob> {
+export async function fetchSpeech(
+  text: string,
+  options: { voice?: string; speed?: number } = {},
+  signal?: AbortSignal,
+): Promise<Blob> {
   const res = await fetch(`${AI_API_URL}/api/v1/tts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, ...options }),
     signal,
   });
   if (!res.ok) throw new Error(await errorDetail(res, `Read aloud failed (${res.status})`));
   return res.blob();
+}
+
+/** Transcribe a 16 kHz mono WAV recording with the local STT model. */
+export async function transcribeSpeech(
+  wav: Blob,
+  signal?: AbortSignal,
+): Promise<{ text: string; duration_seconds: number }> {
+  const body = new FormData();
+  body.append("file", wav, "recording.wav");
+  const res = await fetch(`${AI_API_URL}/api/v1/stt`, { method: "POST", body, signal });
+  if (!res.ok) throw new Error(await errorDetail(res, `Transcription failed (${res.status})`));
+  return (await res.json()) as { text: string; duration_seconds: number };
 }

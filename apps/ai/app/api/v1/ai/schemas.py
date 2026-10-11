@@ -30,6 +30,10 @@ class AIPromptRequest(BaseModel):
         False,
         description="Search the web and answer from the results (RAG) with citations.",
     )
+    research: bool = Field(
+        False,
+        description="Deep research: plan sub-questions, search in rounds, write a cited report.",
+    )
     image: bool = Field(
         False, description="Generate an image from the message (local Ollama image model)."
     )

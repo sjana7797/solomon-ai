@@ -27,6 +27,7 @@ export function useSendMessage() {
       webSearch,
       documentIds = [],
       image = false,
+      research = false,
     }: {
       chatId?: string;
       text: string;
@@ -37,6 +38,8 @@ export function useSendMessage() {
       documentIds?: string[];
       /** Force image generation for this message. */
       image?: boolean;
+      /** Deep research for this message. */
+      research?: boolean;
     }) => {
       let id = chatId;
       if (!id) {
@@ -49,7 +52,7 @@ export function useSendMessage() {
         await updateChat(id, { documentIds: merged });
       }
       await appendMessage({ chatId: id, role: "user", content: text, status: "done" });
-      void startCompletion({ chatId: id, model, thinking, webSearch, image });
+      void startCompletion({ chatId: id, model, thinking, webSearch, image, research });
     },
     [router],
   );

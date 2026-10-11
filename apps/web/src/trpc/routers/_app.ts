@@ -1,4 +1,5 @@
 import { discoverRouter } from "@/features/discover/server/router";
+import { financeRouter } from "@/features/finance/server/router";
 import { systemRouter } from "@/features/system/server/router";
 import { createTRPCRouter } from "@/trpc/init";
 
@@ -7,6 +8,7 @@ import { createTRPCRouter } from "@/trpc/init";
 export const appRouter = createTRPCRouter({
   system: systemRouter,
   discover: discoverRouter,
+  finance: financeRouter,
 });
 
 export type AppRouter = typeof appRouter;

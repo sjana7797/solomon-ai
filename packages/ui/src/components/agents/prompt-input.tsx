@@ -1,7 +1,7 @@
 "use client";
 // beui.dev/components/agents/prompt-input
 
-import { ArrowUp, Plus, Square } from "lucide-react";
+import { ArrowUp, Check, Plus, Square } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   type FormEvent,
@@ -42,6 +42,10 @@ export interface PromptAction {
   description?: ReactNode;
   icon?: ReactNode;
   disabled?: boolean;
+  /** Shows a check mark, for toggle-style actions (local addition). */
+  selected?: boolean;
+  /** Small heading above this action, starting a new group (local addition). */
+  groupLabel?: ReactNode;
 }
 
 export interface PromptInputProps extends Omit<
@@ -226,12 +230,24 @@ export function PromptInput({
               align="start"
               sideOffset={8}
               radius={12}
-              className="w-56 p-1.5"
+              className="w-64 p-1.5"
             >
-              {actions.map((action) => (
+              {actions.map((action, index) => (
+                <div key={action.value}>
+                {action.groupLabel ? (
+                  <div
+                    className={cn(
+                      "px-2.5 pt-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase",
+                      index > 0 && "mt-1 border-t border-border/60",
+                    )}
+                  >
+                    {action.groupLabel}
+                  </div>
+                ) : null}
                 <button
-                  key={action.value}
                   type="button"
+                  role={action.selected === undefined ? undefined : "menuitemcheckbox"}
+                  aria-checked={action.selected}
                   disabled={action.disabled}
                   onClick={() => {
                     onAction?.(action.value);
@@ -244,7 +260,7 @@ export function PromptInput({
                       {action.icon}
                     </span>
                   ) : null}
-                  <span className="min-w-0">
+                  <span className="min-w-0 flex-1">
                     <span className="block text-sm text-foreground">
                       {action.label}
                     </span>
@@ -254,7 +270,11 @@ export function PromptInput({
                       </span>
                     ) : null}
                   </span>
+                  {action.selected ? (
+                    <Check aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-foreground" />
+                  ) : null}
                 </button>
+                </div>
               ))}
             </MorphPopoverContent>
           </MorphPopover>

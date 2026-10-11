@@ -27,6 +27,8 @@ export function ChatScreen({ chatId }: { chatId?: string }) {
   const files = useAttachments(chat);
   // One-shot: image mode applies to the next message only.
   const [imageMode, setImageMode] = useState(false);
+  // One-shot too: deep research is slow, so it never sticks between messages.
+  const [researchMode, setResearchMode] = useState(false);
   const send = useSendMessage();
   const retry = useRetry();
   const setChatModel = useSetChatModel();
@@ -49,8 +51,10 @@ export function ChatScreen({ chatId }: { chatId?: string }) {
       webSearch,
       documentIds: files.takePending(),
       image: imageMode,
+      research: researchMode,
     });
     setImageMode(false);
+    setResearchMode(false);
   };
 
   if (chatId && chat === null) {
@@ -76,7 +80,15 @@ export function ChatScreen({ chatId }: { chatId?: string }) {
       webSearch={webSearch}
       onWebSearchChange={setWebSearch}
       imageMode={imageMode}
-      onImageModeChange={setImageMode}
+      onImageModeChange={(on) => {
+        setImageMode(on);
+        if (on) setResearchMode(false);
+      }}
+      researchMode={researchMode}
+      onResearchModeChange={(on) => {
+        setResearchMode(on);
+        if (on) setImageMode(false);
+      }}
       attachments={files.attachments}
       onAttachFiles={(list) => void files.addFiles(list)}
       onRemoveAttachment={files.remove}
