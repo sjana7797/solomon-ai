@@ -1,0 +1,80 @@
+# model_list:
+#   # Reasoning
+#   - model_name: athena
+#     litellm_params:
+#       model: ollama_chat/gpt-oss:120b
+#       api_base: os.environ/OLLAMA_API_URL
+#       api_key: os.environ/OLLAMA_API_KEY
+#     model_info:
+#       description: "Advanced reasoning, complex analysis, planning, and difficult problem-solving tasks."
+
+#   # General chat
+#   - model_name: apollo
+#     litellm_params:
+#       model: ollama_chat/gpt-oss:20b
+#       api_base: os.environ/OLLAMA_API_URL
+#       api_key: os.environ/OLLAMA_API_KEY
+#     model_info:
+#       description: "General-purpose conversations, explanations, summarization, and everyday questions."
+
+#   # Intent classification and routing
+#   - model_name: hermes
+#     litellm_params:
+#       model: ollama_chat/nemotron-3-nano:30b
+#       api_base: os.environ/OLLAMA_API_URL
+#       api_key: os.environ/OLLAMA_API_KEY
+#     model_info:
+#       description: "Classifies user intent and routes requests to the appropriate Solomon AI capability."
+
+#   # Coding
+#   - model_name: hephaestus
+#     litellm_params:
+#       model: ollama_chat/gpt-oss:20b
+#       api_base: os.environ/OLLAMA_API_URL
+#       api_key: os.environ/OLLAMA_API_KEY
+#     model_info:
+#       description: "Code generation, debugging, refactoring, technical explanations, and software architecture."
+
+#   # Research
+#   - model_name: prometheus
+#     litellm_params:
+#       model: ollama_chat/gpt-oss:120b
+#       api_base: os.environ/OLLAMA_API_URL
+#       api_key: os.environ/OLLAMA_API_KEY
+#     model_info:
+#       description: "Multi-step research, web-search synthesis, source comparison, and evidence-based answers."
+
+#   # Validation
+#   - model_name: themis
+#     litellm_params:
+#       model: ollama_chat/gemma4:31b
+#       api_base: os.environ/OLLAMA_API_URL
+#       api_key: os.environ/OLLAMA_API_KEY
+#     model_info:
+#       description: "Reviews generated outputs for consistency, relevance, and compliance with defined requirements."
+
+#   # Advanced reasoning
+#   - model_name: zeus
+#     litellm_params:
+#       model: ollama_chat/nemotron-3-ultra
+#       api_base: os.environ/OLLAMA_API_URL
+#       api_key: os.environ/OLLAMA_API_KEY
+#     model_info:
+#       description: "Candidate model for demanding reasoning and complex multi-step tasks; benchmark before routing production traffic."
+
+#   # Multimodal
+#   - model_name: iris
+#     litellm_params:
+#       model: ollama_chat/gemma4:31b
+#       api_base: os.environ/OLLAMA_API_URL
+#       api_key: os.environ/OLLAMA_API_KEY
+#     model_info:
+#       description: "Candidate for image understanding and multimodal question answering, subject to provider support."
+
+litellm_settings:
+  drop_params: true
+  request_timeout: 600
+  num_retries: 2
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

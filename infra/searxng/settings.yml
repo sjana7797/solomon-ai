@@ -1,0 +1,18 @@
+# SearXNG config — https://docs.searxng.org/admin/settings/
+# Used by the AI service (apps/ai) for image search alongside web search.
+use_default_settings: true
+
+general:
+  instance_name: "solomon-searxng"
+
+server:
+  # Local dev secret; set SEARXNG_SECRET in production.
+  secret_key: "6b27b1efd724856d48a229f4016bcbfb602b6a1d40cb5fb20f846927e6c0398d"
+  limiter: false # internal service, not exposed publicly
+  image_proxy: false
+
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json # required for the API (format=json)
