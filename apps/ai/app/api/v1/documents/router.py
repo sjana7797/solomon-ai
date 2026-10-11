@@ -1,9 +1,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
 
+from app.api.identity import OwnerId
 from app.core.background import spawn_background
 from app.api.v1.documents.extract import MAX_UPLOAD_BYTES, UnsupportedFileError, extract_text
 from app.api.v1.documents.store import (
@@ -16,7 +17,6 @@ from app.api.v1.documents.store import (
 
 documents_router = APIRouter(prefix="/documents", tags=["Documents"])
 
-ClientId = Annotated[UUID, Header(alias="X-Client-Id")]
 
 
 def _serialize(doc: DocumentInfo) -> dict:
@@ -33,7 +33,7 @@ def _serialize(doc: DocumentInfo) -> dict:
 
 
 @documents_router.post("", status_code=202)
-async def upload_document(file: UploadFile, client_id: ClientId):
+async def upload_document(file: UploadFile, client_id: OwnerId):
     """Upload a file for RAG. Text is extracted now; embedding runs in the
     background — poll GET /documents?ids=… until status is `ready`."""
     data = await file.read(MAX_UPLOAD_BYTES + 1)
@@ -61,14 +61,14 @@ async def upload_document(file: UploadFile, client_id: ClientId):
 
 @documents_router.get("")
 async def get_documents(
-    client_id: ClientId, ids: Annotated[list[UUID] | None, Query()] = None
+    client_id: OwnerId, ids: Annotated[list[UUID] | None, Query()] = None
 ):
     """The caller's uploads, newest first (optionally only `ids`)."""
     return {"documents": [_serialize(d) for d in await list_uploads(client_id, ids)]}
 
 
 @documents_router.delete("/{document_id}", status_code=204)
-async def remove_document(document_id: UUID, client_id: ClientId):
+async def remove_document(document_id: UUID, client_id: OwnerId):
     if not await delete_upload(client_id, document_id):
         raise HTTPException(status_code=404, detail="Document not found")
 

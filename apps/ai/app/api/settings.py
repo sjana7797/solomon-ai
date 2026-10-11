@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     LITELLM_BASE_URL: str = "http://localhost:4000"
     LITELLM_API_KEY: str = ""
     # Model used for chat titles; empty means "use the chat's own model".
-    TITLE_MODEL: str = ""
+    TITLE_MODEL: str = "daedalus"
 
     # Web search (Ollama web search API) + RAG
     OLLAMA_API_URL: str = "https://ollama.com"
@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     STT_MODEL: str = "moonshine-ai/moonshine-base"
     STT_IDLE_UNLOAD_SECONDS: int = 600
     STT_MAX_SECONDS: int = 120
+
+    # Accounts: Better Auth in the web app signs short-lived JWTs (EdDSA).
+    AUTH_JWKS_URL: str = "http://localhost:3000/api/auth/jwks"
+    AUTH_ISSUER: str = "http://localhost:3000"
+    AUTH_AUDIENCE: str = "solomon"
 
     # Deep research: plan → research sub-questions (in rounds) → reflect → report
     RESEARCH_MAX_ROUNDS: int = 3  # initial round + up to 2 follow-up rounds

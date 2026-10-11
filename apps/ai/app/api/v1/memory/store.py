@@ -208,3 +208,29 @@ async def clear_memories(owner_id: UUID) -> int:
     async with db_service.session() as session, session.begin():
         result = await session.execute(delete(memories).where(memories.c.owner_id == owner_id))
         return result.rowcount
+
+
+async def move_memories(session, from_owner: UUID, to_owner: UUID) -> int:
+    """Re-encrypt one owner's memories under another owner's key (account claim).
+    Runs inside the caller's transaction."""
+    old = await _profile(session, from_owner, create=False)
+    if old is None:
+        return 0
+    new = await _profile(session, to_owner, create=True)
+    cipher = get_chat_cipher()
+    old_dek, new_dek = _dek(old), _dek(new)
+    rows = (
+        await session.execute(select(memories).where(memories.c.owner_id == from_owner))
+    ).all()
+    for row in rows:
+        content = cipher.decrypt(old_dek, row.content_enc, memory_aad(row.id))
+        await session.execute(
+            update(memories)
+            .where(memories.c.id == row.id)
+            .values(
+                owner_id=to_owner,
+                content_enc=cipher.encrypt(new_dek, content, memory_aad(row.id)),
+            )
+        )
+    await session.execute(delete(memory_profiles).where(memory_profiles.c.owner_id == from_owner))
+    return len(rows)

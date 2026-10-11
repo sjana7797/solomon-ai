@@ -9,6 +9,7 @@ import { PanelLeftIcon, SquareIcon, Volume2Icon } from "lucide-react";
 import { startReadAloud, stopReadAloud, useReadAloud } from "@/features/chat/lib/read-aloud";
 
 import { MemorySettings } from "@/features/memory/components/memory-settings";
+import { EncryptionSettings } from "@/features/vault/components/encryption-settings";
 
 import { setVoicePreferences, useVoicePreferences } from "../lib/voice-preferences";
 import { SPEED_MAX, SPEED_MIN, SPEED_STEP, VOICES, type VoiceId } from "../voices";
@@ -52,6 +53,7 @@ export function SettingsPage() {
             Settings
           </h1>
 
+          <EncryptionSettings />
           <MemorySettings />
 
           <section aria-labelledby="read-aloud-heading" className="mt-14 space-y-8">

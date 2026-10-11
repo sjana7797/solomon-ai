@@ -1,9 +1,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.api.identity import OwnerId
 from app.api.v1.memory.store import (
     clear_memories,
     delete_memory,
@@ -14,7 +15,6 @@ from app.api.v1.memory.store import (
 
 memory_router = APIRouter(prefix="/memory", tags=["Memory"])
 
-ClientId = Annotated[UUID, Header(alias="X-Client-Id")]
 
 
 class MemorySettings(BaseModel):
@@ -22,7 +22,7 @@ class MemorySettings(BaseModel):
 
 
 @memory_router.get("")
-async def get_memory(client_id: ClientId):
+async def get_memory(client_id: OwnerId):
     """Whether memory is on, and everything remembered about this user."""
     return {
         "enabled": await is_enabled(client_id),
@@ -31,17 +31,17 @@ async def get_memory(client_id: ClientId):
 
 
 @memory_router.put("/settings")
-async def update_settings(body: MemorySettings, client_id: ClientId):
+async def update_settings(body: MemorySettings, client_id: OwnerId):
     await set_enabled(client_id, body.enabled)
     return {"enabled": body.enabled}
 
 
 @memory_router.delete("/{memory_id}", status_code=204)
-async def remove_memory(memory_id: UUID, client_id: ClientId):
+async def remove_memory(memory_id: UUID, client_id: OwnerId):
     if not await delete_memory(client_id, memory_id):
         raise HTTPException(status_code=404, detail="Memory not found")
 
 
 @memory_router.delete("")
-async def forget_everything(client_id: ClientId):
+async def forget_everything(client_id: OwnerId):
     return {"deleted": await clear_memories(client_id)}

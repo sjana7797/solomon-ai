@@ -17,6 +17,7 @@ import { ChartLineIcon, CompassIcon, PlusIcon, SettingsIcon, Trash2Icon } from "
 import { useParams, usePathname, useRouter } from "next/navigation";
 
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AccountButton } from "@/features/auth/components/account-button";
 
 import { useDeleteChat } from "../hooks/use-chat-actions";
 import { useChats } from "../hooks/use-chats";
@@ -155,8 +156,10 @@ export function ChatSidebar() {
             </AnimatedSidebarMenuButton>
           </AnimatedSidebarMenuItem>
         </AnimatedSidebarMenu>
-        <div className="flex items-center justify-between px-1.5">
-          <span className="text-xs text-muted-foreground">Stored on this device</span>
+        <div className="flex items-center gap-1">
+          <div className="min-w-0 flex-1">
+            <AccountButton />
+          </div>
           <ThemeToggle />
         </div>
       </AnimatedSidebarFooter>

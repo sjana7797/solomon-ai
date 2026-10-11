@@ -1,6 +1,6 @@
 import { AI_API_URL } from "@/lib/env";
 
-import { getClientId } from "@/features/chat/lib/client-id";
+import { identityHeaders } from "@/features/auth/lib/auth-client";
 
 import type { MemoryState } from "./types";
 
@@ -10,7 +10,11 @@ const BASE = `${AI_API_URL}/api/v1/memory`;
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
-    headers: { "X-Client-Id": getClientId(), "Content-Type": "application/json", ...init.headers },
+    headers: {
+      ...(await identityHeaders()),
+      "Content-Type": "application/json",
+      ...init.headers,
+    },
   });
   if (!res.ok) throw new Error(`Memory service responded with ${res.status}`);
   return (res.status === 204 ? undefined : await res.json()) as T;

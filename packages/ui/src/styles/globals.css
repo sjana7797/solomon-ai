@@ -177,6 +177,7 @@
   --animate-marquee: marquee 30s linear infinite;
   --animate-marquee-vertical: marquee-vertical 30s linear infinite;
   --animate-shimmer: shimmer 2.5s linear infinite;
+  --animate-rise: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
 
   @keyframes marquee {
     from { transform: translateX(0); }
@@ -185,6 +186,10 @@
   @keyframes marquee-vertical {
     from { transform: translateY(0); }
     to { transform: translateY(calc(-100% - var(--gap, 1rem))); }
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); filter: blur(4px); }
+    to { opacity: 1; transform: none; filter: none; }
   }
   @keyframes shimmer {
     from { background-position: 200% 0; }

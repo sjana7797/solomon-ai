@@ -2,7 +2,7 @@ import type { QuoteSnapshot } from "@/features/finance";
 import type { MemoryChange } from "@/features/memory";
 import { AI_API_URL } from "@/lib/env";
 
-import { getClientId } from "../lib/client-id";
+import { identityHeaders } from "@/features/auth/lib/auth-client";
 import type {
   ImageResult,
   ModelInfo,
@@ -111,7 +111,7 @@ export async function* streamCompletion(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Client-Id": getClientId(),
+      ...(await identityHeaders()),
     },
     body: JSON.stringify(body),
     signal,
@@ -125,7 +125,7 @@ export async function* resumeCompletion(
   signal?: AbortSignal,
 ): AsyncGenerator<CompletionEvent> {
   const res = await fetch(`${AI_API_URL}/api/v1/chat/completion/${replyId}/stream`, {
-    headers: { "X-Client-Id": getClientId() },
+    headers: await identityHeaders(),
     signal,
   });
   yield* readEvents(res);
@@ -135,7 +135,7 @@ export async function* resumeCompletion(
 export async function stopReply(replyId: string) {
   await fetch(`${AI_API_URL}/api/v1/chat/completion/${replyId}/stop`, {
     method: "POST",
-    headers: { "X-Client-Id": getClientId() },
+    headers: await identityHeaders(),
   });
 }
 
@@ -154,7 +154,7 @@ export async function uploadDocument(file: File): Promise<UploadedDocument> {
   body.append("file", file);
   const res = await fetch(`${AI_API_URL}/api/v1/documents`, {
     method: "POST",
-    headers: { "X-Client-Id": getClientId() },
+    headers: await identityHeaders(),
     body,
   });
   if (!res.ok) throw new Error(await errorDetail(res, `Upload failed (${res.status})`));
@@ -167,7 +167,7 @@ export async function fetchDocuments(
 ): Promise<UploadedDocument[]> {
   const params = new URLSearchParams(ids.map((id) => ["ids", id]));
   const res = await fetch(`${AI_API_URL}/api/v1/documents?${params}`, {
-    headers: { "X-Client-Id": getClientId() },
+    headers: await identityHeaders(),
     signal,
   });
   if (!res.ok) throw new Error(`Failed to load documents (${res.status})`);
@@ -177,7 +177,7 @@ export async function fetchDocuments(
 /** A generated image as a blob URL (the request carries the owner's client id). */
 export async function fetchGeneratedImage(id: string, signal?: AbortSignal): Promise<string> {
   const res = await fetch(`${AI_API_URL}/api/v1/images/${id}`, {
-    headers: { "X-Client-Id": getClientId() },
+    headers: await identityHeaders(),
     signal,
   });
   if (!res.ok) throw new Error(`Couldn't load image (${res.status})`);

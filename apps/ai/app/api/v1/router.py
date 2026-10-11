@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.v1.account.router import account_router
 from app.api.v1.chat import chat_router
 from app.api.v1.documents.router import documents_router
 from app.api.v1.images.router import images_router
@@ -20,3 +21,4 @@ v1_router.include_router(images_router)
 v1_router.include_router(tts_router)
 v1_router.include_router(stt_router)
 v1_router.include_router(memory_router)
+v1_router.include_router(account_router)

@@ -1,15 +1,16 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Response
 
+from app.api.identity import OwnerId
 from app.api.v1.images.store import load_image
 
 images_router = APIRouter(prefix="/images", tags=["Images"])
 
 
 @images_router.get("/{image_id}")
-async def get_image(image_id: UUID, client_id: Annotated[UUID, Header(alias="X-Client-Id")]):
+async def get_image(image_id: UUID, client_id: OwnerId):
     """A generated image's bytes, for its owner only."""
     image = await load_image(client_id, image_id)
     if image is None:

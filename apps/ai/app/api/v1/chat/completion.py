@@ -1,9 +1,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
+from app.api.identity import OwnerId
 from app.api.v1.ai.schemas import AIPromptRequest
 from app.api.v1.ai.services import get_ai_response
 from app.api.v1.chat.repository import get_chat_owner
@@ -14,8 +15,6 @@ completion_router = APIRouter(
     prefix="/completion",
 )
 
-# Anonymous browser id until auth exists; owns the stored chats.
-ClientId = Annotated[UUID, Header(alias="X-Client-Id")]
 
 _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
@@ -29,7 +28,7 @@ def _stream(run_id: UUID, after: str = "0-0") -> StreamingResponse:
 
 
 @completion_router.post("")
-async def create_completion(ai_prompt_request: AIPromptRequest, client_id: ClientId):
+async def create_completion(ai_prompt_request: AIPromptRequest, client_id: OwnerId):
     """Start a reply and stream it. Generation runs in the background, so if the
     connection drops, reconnect with GET /completion/{assistant_message_id}/stream."""
     owner = await get_chat_owner(ai_prompt_request.chat_id)
@@ -48,7 +47,7 @@ async def create_completion(ai_prompt_request: AIPromptRequest, client_id: Clien
 @completion_router.get("/{run_id}/stream")
 async def resume_completion(
     run_id: UUID,
-    client_id: ClientId,
+    client_id: OwnerId,
     after: Annotated[str, Query(pattern=r"^\d+-\d+$")] = "0-0",
 ):
     """Replay a reply's events from `after` (the start by default) and follow it
@@ -59,7 +58,7 @@ async def resume_completion(
 
 
 @completion_router.post("/{run_id}/stop", status_code=204)
-async def stop_completion(run_id: UUID, client_id: ClientId):
+async def stop_completion(run_id: UUID, client_id: OwnerId):
     if await run_owner(run_id) != client_id:
         raise HTTPException(status_code=404, detail="Reply not found")
     stop_run(run_id)

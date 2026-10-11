@@ -20,3 +20,5 @@ export const db = drizzle({
 });
 
 export * from "./schema";
+// Query helpers, re-exported so apps use this package's single drizzle-orm copy.
+export { and, desc, eq, inArray, sql } from "drizzle-orm";
